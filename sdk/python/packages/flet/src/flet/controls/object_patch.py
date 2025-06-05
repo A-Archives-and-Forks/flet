@@ -32,7 +32,6 @@
 import dataclasses
 import weakref
 from enum import Enum
-from typing import Any
 
 _ST_ADD = 0
 _ST_REMOVE = 1
@@ -241,40 +240,6 @@ class ObjectPatch:
             list(builder.get_added_controls()),
             list(builder.get_removed_controls()),
         )
-
-    def to_graph(self) -> Any:
-        root = {}
-        for op in self.patch:
-            prev = root
-            node = root
-            parts = op["path"]
-            len_parts = len(parts)
-            if len_parts == 0 and op["op"] == "replace":
-                return {"": op["value"]}  # root object
-            for i in range(0, len_parts):
-                node = prev.get(parts[i], None)
-                if node is None:
-                    node = {}
-                if i == len_parts - 1:
-                    if op["op"] == "remove":
-                        indices = prev.get("$d", None)
-                        if indices is None:
-                            indices = []
-                            prev["$d"] = indices
-                        indices.append(parts[-1])
-                        break
-                    elif op["op"] == "replace":
-                        prev[parts[-1]] = op["value"]
-                    elif op["op"] == "add":
-                        prev[parts[-1]] = {"$a": op["value"]}
-                    elif op["op"] == "move":
-                        prev[parts[-1]] = {"$m": op["from"]}
-                    else:
-                        raise ObjectPatchException(f"Unknown operation: {op['op']}")
-                else:
-                    prev[parts[i]] = node
-                prev = node
-        return root
 
     def to_message(self):
         state = {"i": 0}
@@ -687,23 +652,26 @@ class DiffBuilder:
             prev_dicts = getattr(dst, "__prev_dicts", {})
             prev_classes = getattr(dst, "__prev_classes", {})
 
+            # TODO - should optimize performance?
+            fields = {f.name: f for f in dataclasses.fields(dst)}
             for field_name, change in changes.items():
-                old = change[0]
-                new = change[1]
+                if field_name in fields:
+                    old = change[0]
+                    new = change[1]
 
-                # print("_compare_values:changes", old, new)
+                    # print("_compare_values:changes", old, new)
 
-                self._compare_values(parent, path, field_name, old, new, frozen)
+                    self._compare_values(parent, path, field_name, old, new, frozen)
 
-                # update prev value
-                if isinstance(new, list):
-                    new = new[:]
-                    prev_lists[field_name] = new
-                elif isinstance(new, dict):
-                    new = new.copy()
-                    prev_dicts[field_name] = new
-                elif dataclasses.is_dataclass(new):
-                    prev_classes[field_name] = new
+                    # update prev value
+                    if isinstance(new, list):
+                        new = new[:]
+                        prev_lists[field_name] = new
+                    elif isinstance(new, dict):
+                        new = new.copy()
+                        prev_dicts[field_name] = new
+                    elif dataclasses.is_dataclass(new):
+                        prev_classes[field_name] = new
 
             # compare lists
             for field_name, old in list(prev_lists.items()):
@@ -871,10 +839,10 @@ class DiffBuilder:
                             value if not name.startswith("on_") else value is not None
                         )
                         if old_value != new_value:
-                            # print(
-                            #     f"set_attr: {obj.__class__.__name__}.{name} = "
-                            #     f"{new_value}, old: {old_value}"
-                            # )
+                            print(
+                                f"\n\nset_attr: {obj.__class__.__name__}.{name} = "
+                                f"{new_value}, old: {old_value}"
+                            )
                             changes = getattr(obj, "__changes")
                             changes[name] = (old_value, new_value)
                 object.__setattr__(obj, name, value)

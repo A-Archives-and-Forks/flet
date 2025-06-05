@@ -126,7 +126,10 @@ class Session:
             self.__index[added_control._i] = added_control
             added_control.did_mount()
 
-        return patch[""]
+        # patch format:
+        # [[<tree_index>],[<operation_1>, <operation_2>]]
+        # <operation> := [<type>, <tree_node_index>, <property|index>, <value>]
+        return patch[1][0][3]  # [1] - operations -> [0] - 1st operation -> [3] - Page
 
     # optimizations:
     # - disable auto-update
@@ -235,7 +238,7 @@ class Session:
             control_cls=BaseControl,
         )
 
-        # print("\n\npatch:", patch)
+        print("\n\npatch:", patch)
         # print(f"\n\nadded_controls: ({len(added_controls)})")
         # for ac in added_controls:
         #     print(f"added_control: {ac._c}({ac._i})")
@@ -244,4 +247,4 @@ class Session:
         # for c in removed_controls:
         #     print(f"removed_control: {c._c}({c._i})")
 
-        return patch.to_graph(), added_controls, removed_controls
+        return patch.to_message(), added_controls, removed_controls

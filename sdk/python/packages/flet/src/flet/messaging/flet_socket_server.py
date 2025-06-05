@@ -179,7 +179,7 @@ class FletSocketServer(Connection):
             task.add_done_callback(self.__running_tasks.discard)
 
     def send_message(self, message: ClientMessage):
-        # print(f"Sending: {message}")
+        print(f"Sending: {message}")
         m = msgpack.packb(
             [message.action, message.body],
             default=configure_encode_object_for_msgpack(BaseControl),
