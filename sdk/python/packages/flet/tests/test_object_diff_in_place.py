@@ -176,6 +176,40 @@ def test_simple_page():
     assert len(removed_controls) == 3
 
 
+def test_floating_action_button():
+    conn = Connection()
+    conn.pubsubhub = PubSubHub()
+    page = Page(sess=Session(conn))
+
+    # initial update
+    make_msg(page, {}, show_details=True)
+
+    # second update
+    counter = ft.Text("0", size=50, data=0)
+
+    def btn_click(e):
+        counter.data += 1
+        counter.value = str(counter.data)
+        counter.update()
+
+    page.floating_action_button = ft.FloatingActionButton(
+        icon=ft.Icons.ADD, on_click=btn_click
+    )
+    page.controls.append(
+        ft.SafeArea(
+            ft.Container(
+                counter,
+                alignment=ft.Alignment.center(),
+                bgcolor=ft.Colors.YELLOW,
+                expand=True,
+            ),
+            expand=True,
+        ),
+    )
+
+    make_diff(page, show_details=True)
+
+
 def test_changes_tracking():
     conn = Connection()
     conn.pubsubhub = PubSubHub()

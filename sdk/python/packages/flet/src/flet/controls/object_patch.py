@@ -285,7 +285,7 @@ class ObjectPatch:
             else:
                 raise ObjectPatchException(f"Unknown operation: {op['op']}")
 
-        return [paths, ops]
+        return [paths, *ops]
 
 
 class DiffBuilder:
@@ -839,10 +839,10 @@ class DiffBuilder:
                             value if not name.startswith("on_") else value is not None
                         )
                         if old_value != new_value:
-                            print(
-                                f"\n\nset_attr: {obj.__class__.__name__}.{name} = "
-                                f"{new_value}, old: {old_value}"
-                            )
+                            # print(
+                            #     f"\n\nset_attr: {obj.__class__.__name__}.{name} = "
+                            #     f"{new_value}, old: {old_value}"
+                            # )
                             changes = getattr(obj, "__changes")
                             changes[name] = (old_value, new_value)
                 object.__setattr__(obj, name, value)

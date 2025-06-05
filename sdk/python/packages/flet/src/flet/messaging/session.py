@@ -95,7 +95,7 @@ class Session:
         patch, added_controls, removed_controls = self.__get_update_control_patch(
             control=control, prev_control=control
         )
-        if patch:
+        if len(patch) > 1:
             for removed_control in removed_controls:
                 removed_control.will_unmount()
                 self.__index.pop(removed_control._i, None)
@@ -127,9 +127,9 @@ class Session:
             added_control.did_mount()
 
         # patch format:
-        # [[<tree_index>],[<operation_1>, <operation_2>]]
+        # [[<tree_index>], <operation_1>, <operation_2>, ...]
         # <operation> := [<type>, <tree_node_index>, <property|index>, <value>]
-        return patch[1][0][3]  # [1] - operations -> [0] - 1st operation -> [3] - Page
+        return patch[1][3]  # [1] - 1st operation -> [3] - Page
 
     # optimizations:
     # - disable auto-update
