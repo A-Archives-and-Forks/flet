@@ -287,7 +287,7 @@ class ObjectPatch:
             parts = path
             len_parts = len(parts)
             if len_parts == 0:
-                return 0  # root object
+                return [0, 0]  # root object
             n = 0
             while n < len_parts - 1:
                 if len(parent) == 1:
@@ -299,22 +299,22 @@ class ObjectPatch:
                     state["i"] += 1
                 parent = node
                 n += 1
-            return [node[0], parts[n]] if n < len_parts else [node[0]]
+            return [node[0], parts[n]]
 
         ops = []
         for op in self.patch:
             if op["op"] == "remove":
-                ops.append([Operation.Remove, encode_path(op["path"])])
+                ops.append([Operation.Remove, *encode_path(op["path"])])
             elif op["op"] == "replace":
-                ops.append([Operation.Replace, encode_path(op["path"]), op["value"]])
+                ops.append([Operation.Replace, *encode_path(op["path"]), op["value"]])
             elif op["op"] == "add":
-                ops.append([Operation.Add, encode_path(op["path"]), op["value"]])
+                ops.append([Operation.Add, *encode_path(op["path"]), op["value"]])
             elif op["op"] == "move":
                 ops.append(
                     [
                         Operation.Move,
-                        encode_path(op["from"]),
-                        encode_path(op["path"]),
+                        *encode_path(op["from"]),
+                        *encode_path(op["path"]),
                     ]
                 )
             else:
