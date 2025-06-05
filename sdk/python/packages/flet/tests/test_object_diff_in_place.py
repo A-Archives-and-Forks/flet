@@ -1,10 +1,8 @@
-import datetime
 from dataclasses import field
 from typing import Any, Optional
 
 import flet as ft
-import msgpack
-from flet.controls.base_control import BaseControl, control
+from flet.controls.base_control import control
 from flet.controls.buttons import ButtonStyle
 from flet.controls.colors import Colors
 from flet.controls.control import Control
@@ -17,94 +15,15 @@ from flet.controls.material.button import Button
 # import flet.canvas as cv
 from flet.controls.material.container import Container
 from flet.controls.material.elevated_button import ElevatedButton
-from flet.controls.object_patch import ObjectPatch
 from flet.controls.page import Page
 from flet.controls.painting import Paint, PaintLinearGradient
 from flet.controls.ref import Ref
 from flet.controls.services.service import Service
 from flet.messaging.connection import Connection
-from flet.messaging.protocol import configure_encode_object_for_msgpack
 from flet.messaging.session import Session
 from flet.pubsub.pubsub_hub import PubSubHub
 
-
-def b_pack(data):
-    return msgpack.packb(data, default=configure_encode_object_for_msgpack(BaseControl))
-
-
-def b_unpack(packed_data):
-    return msgpack.unpackb(packed_data)
-
-
-def update_page(new: Any, old: Any = None, show_details=True):
-    if old is None:
-        old = new
-    start = datetime.datetime.now()
-
-    # 1 -calculate diff
-    patch, added_controls, removed_controls = ObjectPatch.from_diff(
-        old, new, control_cls=BaseControl
-    )
-
-    # 2 - convert patch to hierarchy
-    graph_patch = patch.to_graph()
-    # print(graph_patch)
-
-    # 3 - build msgpack message
-    msg = msgpack.packb(
-        graph_patch, default=configure_encode_object_for_msgpack(BaseControl)
-    )
-
-    end = datetime.datetime.now()
-
-    if show_details:
-        # print("\nPatch:", patch)
-        print("\nGraph patch:", graph_patch)
-        print("\nMessage:", msg)
-    else:
-        print("\nMessage length:", len(msg))
-
-    print("\nTotal:", (end - start).total_seconds() * 1000)
-
-    return msg
-
-
-def make_diff(new: Any, old: Any = None, show_details=True):
-    if old is None:
-        old = new
-    start = datetime.datetime.now()
-
-    # 1 -calculate diff
-    patch, added_controls, removed_controls = ObjectPatch.from_diff(
-        old, new, control_cls=ft.BaseControl
-    )
-
-    # 2 - convert patch to hierarchy
-    graph_patch = patch.to_graph()
-    # print(graph_patch)
-
-    end = datetime.datetime.now()
-
-    if show_details:
-        print(f"\nPatch in {(end - start).total_seconds() * 1000} ms: {graph_patch}")
-
-    return graph_patch, added_controls, removed_controls
-
-
-def make_msg(new: Any, old: Any = None, show_details=True):
-    graph_patch, added_controls, removed_controls = make_diff(new, old, show_details)
-
-    # 3 - build msgpack message
-    msg = msgpack.packb(
-        graph_patch, default=configure_encode_object_for_msgpack(ft.BaseControl)
-    )
-
-    if show_details:
-        print("\nMessage:", msg)
-    else:
-        print("\nMessage length:", len(msg))
-
-    return msg, added_controls, removed_controls
+from .common import b_unpack, make_diff, make_msg
 
 
 @control
@@ -186,8 +105,10 @@ def test_simple_page():
     assert page._i == 1
     assert page.window and page.window._i == 2
 
-    msg = update_page(page, {}, show_details=True)
+    msg, _, _, added_controls, removed_controls = make_msg(page, {}, show_details=True)
     u_msg = b_unpack(msg)
+    assert len(added_controls) == 19
+    assert len(removed_controls) == 0
 
     assert page.parent is None
     assert page.controls[0].parent == page.views[0]
@@ -214,15 +135,45 @@ def test_simple_page():
             on_click=lambda e: print(e),
             opacity=1,
             ref=None,
-        )
+        ),
+        SuperElevatedButton("Another Button"),
     ]
     del page.fonts["font2"]
     assert page.controls[0].controls[0].page is None
 
     page.services[0].prop_2 = [2, 6]
 
-    update_page(page, show_details=True)
+    # add 2 new buttons to a list
+    _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
     assert hasattr(page.views[0], "__changes")
+    assert len(added_controls) == 2
+    assert len(removed_controls) == 0
+
+    # replace control in a list
+    page.controls[0].controls[0] = SuperElevatedButton("Foo")
+    _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
+    for ac in added_controls:
+        print("\nADDED CONTROL:", ac)
+    for rc in removed_controls:
+        print("\nREMOVED CONTROL:", rc)
+    assert len(added_controls) == 1
+    assert len(removed_controls) == 1
+
+    # insert a new button to the start of a list
+    page.controls[0].controls.insert(0, SuperElevatedButton("Bar"))
+    page.controls[0].controls[1].content = "Baz"
+    _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
+    for ac in added_controls:
+        print("\nADDED CONTROL:", ac)
+    for rc in removed_controls:
+        print("\nREMOVED CONTROL:", rc)
+    assert len(added_controls) == 1
+    assert len(removed_controls) == 0
+
+    page.controls[0].controls.clear()
+    _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
+    assert len(added_controls) == 0
+    assert len(removed_controls) == 3
 
 
 def test_changes_tracking():
@@ -234,7 +185,7 @@ def test_changes_tracking():
     )
 
     # initial update
-    update_page(page, {}, show_details=True)
+    make_msg(page, {}, show_details=True)
 
     # second update
     btn.content = Text("A new button content")
@@ -245,7 +196,7 @@ def test_changes_tracking():
     # t2 = Text("BBB")
     page.controls.append(Text("Line 2"))
 
-    update_page(page, show_details=True)
+    make_msg(page, show_details=True)
 
 
 def test_large_updates():
@@ -283,7 +234,9 @@ def test_large_updates():
     )
 
     # initial update
-    update_page(page, {}, show_details=True)
+    _, patch, _, added_controls, removed_controls = make_msg(
+        page, {}, show_details=True
+    )
 
     # second update
     for i in range(1, 1000):
@@ -291,7 +244,7 @@ def test_large_updates():
             cv.Line(i + 1, i + 100, i + 10, i + 20, paint=Paint(stroke_width=3))
         )
 
-    update_page(cp, show_details=False)
+    make_msg(cp, show_details=False)
 
     cp.shapes[100].x1 = 12
 
@@ -301,7 +254,7 @@ def test_large_updates():
             cv.Line(i + 1, i + 100, i + 10, i + 20, paint=Paint(stroke_width=3))
         )
 
-    update_page(cp, show_details=True)
+    _, patch, _, added_controls, removed_controls = make_msg(cp, show_details=True)
 
 
 def test_add_remove_lists():
@@ -316,13 +269,13 @@ def test_add_remove_lists():
             for ds in data
         ]
     )
-    msg, _, _ = make_msg(chart, {})
+    _, patch, _, _, _ = make_msg(chart, {})
 
     # add/remove
     chart.data_series[0].data_points.pop(0)
     chart.data_series[0].data_points.append(ft.LineChartDataPoint(x=3, y=4))
 
-    patch, _, _ = make_diff(chart, chart)
+    patch, _, _, _ = make_diff(chart, chart)
     assert patch["data_series"][0]["data_points"]["$d"] == [0]
     assert isinstance(
         patch["data_series"][0]["data_points"][2]["$a"], ft.LineChartDataPoint
