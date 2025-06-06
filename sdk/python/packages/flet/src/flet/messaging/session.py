@@ -97,7 +97,8 @@ class Session:
         )
         if len(patch) > 1:
             for removed_control in removed_controls:
-                removed_control.will_unmount()
+                if not any(added._i == removed_control._i for added in added_controls):
+                    removed_control.will_unmount()
                 self.__index.pop(removed_control._i, None)
 
             self.connection.send_message(
@@ -108,7 +109,10 @@ class Session:
 
             for added_control in added_controls:
                 self.__index[added_control._i] = added_control
-                added_control.did_mount()
+                if not any(
+                    removed._i == added_control._i for removed in removed_controls
+                ):
+                    added_control.did_mount()
 
     def apply_patch(self, control_id: int, patch: dict[str, Any]):
         if control := self.__index.get(control_id):
@@ -238,13 +242,13 @@ class Session:
             control_cls=BaseControl,
         )
 
-        print("\n\npatch:", patch)
+        # print("\n\npatch:", patch)
         # print(f"\n\nadded_controls: ({len(added_controls)})")
         # for ac in added_controls:
-        #     print(f"added_control: {ac._c}({ac._i})")
+        #     print(f"\n\nadded_control: {ac._c}({ac._i})")
 
         # print(f"\n\nremoved_controls: ({len(removed_controls)})")
         # for c in removed_controls:
-        #     print(f"removed_control: {c._c}({c._i})")
+        #     print(f"\n\nremoved_control: {c._c}({c._i})")
 
         return patch.to_message(), added_controls, removed_controls
