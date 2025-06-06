@@ -486,91 +486,19 @@ def test_add_remove_lists():
     )
 
 
-# exit()
+def test_reverse_list():
+    col = ft.Column([ft.Text("Line 1"), ft.Text("Line 2"), ft.Text("Line 3")])
+    _, patch, _, _, _ = make_msg(col, {})
 
-
-# # initial update
-# # ==================
-# page_ref = Ref[Page]()
-
-# page = Page(
-#     url="http://aaa.com",
-#     controls=[Div(cls="div_1", some_value="Text")],
-#     prop_1="aaa",
-#     data=100000,
-#     ref=page_ref,
-# )
-
-# print("Page ref:", page_ref.current)
-
-# update_page(page, {})
-# print("page PARENT:", page.parent)
-# print("page.controls[0] PARENT:", page.controls[0].parent)
-
-# # update sub-tree
-# page.controls[0].some_value = "Another text"
-# page.controls[0].controls = [
-#     SuperElevatedButton(
-#         text="Button 😬",
-#         style=ButtonStyle(color=Colors.RED),
-#         on_click=lambda e: print(e),
-#         opacity=1,
-#         ref=None,
-#     )
-# ]
-# print("PAGE:", page.controls[0].controls[0].page)
-# update_page(page.controls[0])
-
-# # exit()
-
-# # check _prev
-# print("\nPrev:", page._prev_prop_1)
-
-# # 2nd update
-# # ==================
-# # page.url = "http://bbb.com"
-# page.prop_1 = None
-# page.controls[0].some_value = "Some value"
-# # del page.controls[0]
-# page.controls.append(Span(cls="span_1"))
-# page.controls.append(Span(cls="span_2"))
-# page.controls.append(Span(cls="span_3"))
-
-# btn = page.controls[0].controls[0]
-# print("PAGE:", btn.page)
-# btn.text = "Supper button"
-# btn.style = ButtonStyle(color=Colors.GREEN)
-# btn.on_click = None
-# update_page(page)
-
-# # exit()
-
-# # 3rd update
-# # ==================
-# ctrl = page.controls.pop()
-# page.controls[0].controls.append(ctrl)
-# update_page(page)
-
-# # exit()
-
-# # 4th update
-# # ==================
-# for i in range(1, 1000):
-#     page.controls.append(
-#         Div(cls=f"div_{i}", controls=[Span(cls=f"span_{i}", text=f"Span {i}")])
-#     )
-
-# update_page(page, show_details=False)
-
-# # exit()
-
-# # 5th update
-# # ==================
-# page.controls[3].controls.insert(0, ElevatedButton(text="Click me"))
-# page.controls[4].controls[0].text = "Hello world"
-# page.controls[20].controls.pop()
-# page.controls.pop()
-# for i in range(100, 300):
-#     page.controls[i].controls[0].text = f"Hello world {i}"
-
-# update_page(page, show_details=False)
+    # reverse
+    col.controls.reverse()
+    patch, _, _, _ = make_diff(col)
+    assert col.controls[0].value == "Line 3"
+    assert col.controls[2].value == "Line 1"
+    assert cmp_ops(
+        patch,
+        [
+            {"op": "move", "from": ["controls", 2], "path": ["controls", 0]},
+            {"op": "move", "from": ["controls", 1], "path": ["controls", 2]},
+        ],
+    )
