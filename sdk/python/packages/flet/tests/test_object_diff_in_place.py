@@ -23,7 +23,7 @@ from flet.messaging.connection import Connection
 from flet.messaging.session import Session
 from flet.pubsub.pubsub_hub import PubSubHub
 
-from .common import b_unpack, make_diff, make_msg
+from .common import b_unpack, cmp_ops, make_diff, make_msg
 
 
 @control
@@ -118,12 +118,74 @@ def test_simple_page():
 
     print(u_msg)
 
-    assert isinstance(u_msg, dict)
-    assert "" in u_msg
-    assert u_msg[""]["_i"] > 0
-    assert u_msg[""]["on_login"]
-    assert len(u_msg[""]["views"]) > 0
-    assert "on_connect" not in u_msg[""]
+    assert isinstance(u_msg, list)
+    assert u_msg[0] == [0]
+    assert len(u_msg[1]) == 4
+    p = u_msg[1][3]
+    assert p["_i"] > 0
+    assert p["on_login"]
+    assert len(p["views"]) > 0
+    assert "on_connect" not in p
+    # assert u_msg == [
+    #     [0],
+    #     [
+    #         0,
+    #         0,
+    #         0,
+    #         {
+    #             "_i": 1,
+    #             "_c": "Page",
+    #             "views": [
+    #                 {
+    #                     "_i": 17,
+    #                     "_c": "View",
+    #                     "controls": [
+    #                         {
+    #                             "_i": 29,
+    #                             "_c": "Div",
+    #                             "cls": "div_1",
+    #                             "some_value": "Text",
+    #                         }
+    #                     ],
+    #                     "bgcolor": "green",
+    #                 }
+    #             ],
+    #             "_overlay": {"_i": 18, "_c": "Overlay"},
+    #             "_dialogs": {"_i": 19, "_c": "Dialogs"},
+    #             "window": {"_i": 2, "_c": "Window"},
+    #             "browser_context_menu": {"_i": 21, "_c": "BrowserContextMenu"},
+    #             "shared_preferences": {"_i": 22, "_c": "SharedPreferences"},
+    #             "clipboard": {"_i": 23, "_c": "Clipboard"},
+    #             "storage_paths": {"_i": 24, "_c": "StoragePaths"},
+    #             "url_launcher": {"_i": 25, "_c": "UrlLauncher"},
+    #             "_user_services": {
+    #                 "_i": 26,
+    #                 "_c": "ServiceRegistry",
+    #                 "services": [
+    #                     {
+    #                         "_i": 30,
+    #                         "_c": "MyService",
+    #                         "prop_1": "Hello",
+    #                         "prop_2": [1, 2, 3],
+    #                     }
+    #                 ],
+    #             },
+    #             "_page_services": {
+    #                 "_i": 27,
+    #                 "_c": "ServiceRegistry",
+    #                 "services": [
+    #                     {"_i": 21, "_c": "BrowserContextMenu"},
+    #                     {"_i": 22, "_c": "SharedPreferences"},
+    #                     {"_i": 23, "_c": "Clipboard"},
+    #                     {"_i": 25, "_c": "UrlLauncher"},
+    #                     {"_i": 24, "_c": "StoragePaths"},
+    #                 ],
+    #             },
+    #             "fonts": {"font1": "font_url_1", "font2": "font_url_2"},
+    #             "on_login": True,
+    #         },
+    #     ],
+    # ]
 
     # update sub-tree
     page.on_login = None
@@ -148,32 +210,99 @@ def test_simple_page():
     assert hasattr(page.views[0], "__changes")
     assert len(added_controls) == 2
     assert len(removed_controls) == 0
+    assert len(patch) == 7
+    assert cmp_ops(
+        patch,
+        [
+            {"op": "replace", "path": ["on_login"], "value": False},
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "some_value"],
+                "value": "Another text",
+            },
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "controls"],
+                # "value": [SuperElevatedButton, SuperElevatedButton],
+            },
+            {"op": "remove", "path": ["fonts", "font2"], "value": "font_url_2"},
+            {
+                "op": "remove",
+                "path": ["_user_services", "services", 0, "prop_2", 0],
+                "value": 1,
+            },
+            {
+                "op": "add",
+                "path": ["_user_services", "services", 0, "prop_2", 1],
+                "value": 6,
+            },
+            {
+                "op": "remove",
+                "path": ["_user_services", "services", 0, "prop_2", 2],
+                "value": 3,
+            },
+        ],
+    )
+    assert len(patch[2]["value"]) == 2
+    assert isinstance(patch[2]["value"][0], SuperElevatedButton)
+    assert isinstance(patch[2]["value"][1], SuperElevatedButton)
 
     # replace control in a list
     page.controls[0].controls[0] = SuperElevatedButton("Foo")
     _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
-    for ac in added_controls:
-        print("\nADDED CONTROL:", ac)
-    for rc in removed_controls:
-        print("\nREMOVED CONTROL:", rc)
+    # for ac in added_controls:
+    #     print("\nADDED CONTROL:", ac)
+    # for rc in removed_controls:
+    #     print("\nREMOVED CONTROL:", rc)
     assert len(added_controls) == 1
     assert len(removed_controls) == 1
+    assert cmp_ops(
+        patch,
+        [
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "controls", 0],
+                "value_type": SuperElevatedButton,
+            }
+        ],
+    )
 
     # insert a new button to the start of a list
     page.controls[0].controls.insert(0, SuperElevatedButton("Bar"))
     page.controls[0].controls[1].content = "Baz"
     _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
-    for ac in added_controls:
-        print("\nADDED CONTROL:", ac)
-    for rc in removed_controls:
-        print("\nREMOVED CONTROL:", rc)
     assert len(added_controls) == 1
     assert len(removed_controls) == 0
+    assert cmp_ops(
+        patch,
+        [
+            {
+                "op": "add",
+                "path": ["views", 0, "controls", 0, "controls", 0],
+                "value_type": SuperElevatedButton,
+            },
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "controls", 1, "content"],
+                "value": "Baz",
+            },
+        ],
+    )
 
     page.controls[0].controls.clear()
     _, patch, _, added_controls, removed_controls = make_msg(page, show_details=True)
     assert len(added_controls) == 0
     assert len(removed_controls) == 3
+    assert cmp_ops(
+        patch,
+        [
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "controls"],
+                "value": [],
+            }
+        ],
+    )
 
 
 def test_floating_action_button():
@@ -207,7 +336,20 @@ def test_floating_action_button():
         ),
     )
 
-    make_diff(page, show_details=True)
+    patch, _, added_controls, removed_controls = make_diff(page, show_details=True)
+    assert cmp_ops(
+        patch,
+        [
+            {
+                "op": "replace",
+                "path": ["views", 0, "floating_action_button"],
+                "value_type": ft.FloatingActionButton,
+            },
+            {"op": "replace", "path": ["views", 0, "controls"]},
+        ],
+    )
+    assert len(patch[1]["value"]) == 1
+    assert isinstance(patch[1]["value"][0], ft.SafeArea)
 
 
 def test_changes_tracking():
@@ -230,7 +372,28 @@ def test_changes_tracking():
     # t2 = Text("BBB")
     page.controls.append(Text("Line 2"))
 
-    make_msg(page, show_details=True)
+    patch, _, added_controls, removed_controls = make_diff(page, show_details=True)
+    assert cmp_ops(
+        patch,
+        [
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "content"],
+                "value_type": ft.Text,
+            },
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "width"],
+                "value": 300,
+            },
+            {
+                "op": "replace",
+                "path": ["views", 0, "controls", 0, "height"],
+                "value": 100,
+            },
+            {"op": "add", "path": ["views", 0, "controls", 1], "value_type": ft.Text},
+        ],
+    )
 
 
 def test_large_updates():
@@ -310,9 +473,16 @@ def test_add_remove_lists():
     chart.data_series[0].data_points.append(ft.LineChartDataPoint(x=3, y=4))
 
     patch, _, _, _ = make_diff(chart, chart)
-    assert patch["data_series"][0]["data_points"]["$d"] == [0]
-    assert isinstance(
-        patch["data_series"][0]["data_points"][2]["$a"], ft.LineChartDataPoint
+    assert cmp_ops(
+        patch,
+        [
+            {"op": "remove", "path": ["data_series", 0, "data_points", 0]},
+            {
+                "op": "add",
+                "path": ["data_series", 0, "data_points", 2],
+                "value_type": ft.LineChartDataPoint,
+            },
+        ],
     )
 
 

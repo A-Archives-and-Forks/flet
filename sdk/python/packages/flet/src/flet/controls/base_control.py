@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import sys
+import weakref
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
@@ -7,6 +9,8 @@ from flet.controls.control_event import ControlEvent
 from flet.controls.control_id import ControlId
 from flet.controls.ref import Ref
 from flet.utils.strings import random_string
+
+logger = logging.getLogger("flet")
 
 # Try importing `dataclass_transform()` for Python 3.11+, else use a no-op function
 if sys.version_info >= (3, 11):  # Only use it for Python 3.11+
@@ -116,6 +120,10 @@ class BaseControl:
 
         self.__method_calls: dict[str, asyncio.Event] = {}
         self.__method_call_results: dict[asyncio.Event, tuple[Any, Optional[str]]] = {}
+        control_id = self._i
+        weakref.finalize(
+            self, lambda: logger.debug(f"Control was garbage collected: {control_id}")
+        )
 
     def __hash__(self) -> int:
         return object.__hash__(self)
@@ -149,9 +157,11 @@ class BaseControl:
         return True
 
     def did_mount(self):
+        print(f"\n\ndid_mount: {self._i}")
         pass
 
     def will_unmount(self):
+        print(f"\n\nwill_unmount: {self._i}")
         pass
 
     # public methods

@@ -115,7 +115,7 @@ def test_page_patch_dataclass():
     graph_patch = patch.to_message()
     print("PATCH 1:", graph_patch)
 
-    assert graph_patch == [[0], []]
+    assert graph_patch == [[0]]
 
     page.media.padding.left = 1
     page.platform_brightness = Brightness.DARK
