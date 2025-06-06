@@ -636,7 +636,7 @@ def test_nested_control_builders():
     cb = ft.ControlBuilder(
         state,
         lambda state: ft.SafeArea(
-            ft.Center(
+            ft.Container(
                 ft.ControlBuilder(
                     state,
                     lambda state: ft.Text(
@@ -651,7 +651,8 @@ def test_nested_control_builders():
                         else [],
                         size=50,
                     ),
-                )
+                ),
+                alignment=ft.Alignment.center(),
             ),
             expand=True,
         ),

@@ -159,8 +159,6 @@ class FletCoreExtension extends FletExtension {
         return CupertinoBottomSheetControl(key: key, control: control);
       case "PopupMenuButton":
         return PopupMenuButtonControl(key: key, control: control);
-      case "Center":
-        return CenterControl(key: key, control: control);
       case "ControlBuilder":
         return ControlBuilderControl(key: key, control: control);
       case "CupertinoSlidingSegmentedButton":
