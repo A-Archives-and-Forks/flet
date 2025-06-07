@@ -639,7 +639,6 @@ class DiffBuilder:
             return  # do not update isolated control's children
 
         if self.control_cls and isinstance(dst, self.control_cls):
-            parent = dst
             if frozen and hasattr(src, "_i"):
                 dst._i = src._i
                 dst.init()
@@ -661,7 +660,7 @@ class DiffBuilder:
 
                     # print("_compare_values:changes", old, new)
 
-                    self._compare_values(parent, path, field_name, old, new, frozen)
+                    self._compare_values(dst, path, field_name, old, new, frozen)
 
                     # update prev value
                     if isinstance(new, list):
@@ -680,7 +679,7 @@ class DiffBuilder:
                         del prev_lists[field_name]
                     continue
                 new = getattr(dst, field_name)
-                self._compare_values(parent, path, field_name, old, new, frozen)
+                self._compare_values(dst, path, field_name, old, new, frozen)
                 prev_lists[field_name] = new[:]
 
             # compare dicts
@@ -690,7 +689,7 @@ class DiffBuilder:
                         del prev_dicts[field_name]
                     continue
                 new = getattr(dst, field_name)
-                self._compare_values(parent, path, field_name, old, new, frozen)
+                self._compare_values(dst, path, field_name, old, new, frozen)
                 prev_dicts[field_name] = new.copy()
 
             # compare dataclasses
@@ -700,13 +699,20 @@ class DiffBuilder:
                         del prev_classes[field_name]
                     continue
                 new = getattr(dst, field_name)
-                self._compare_values(parent, path, field_name, old, new, frozen)
+                self._compare_values(dst, path, field_name, old, new, frozen)
                 prev_classes[field_name] = new
 
             changes.clear()
         else:
             # frozen comparison
-            # print("\nfrozen dataclass compare:", src, dst)
+            # print(
+            #     "\nfrozen dataclass compare:",
+            #     src,
+            #     "\n\ndst:",
+            #     dst,
+            #     "\n\nparent:",
+            #     parent,
+            # )
             for field in dataclasses.fields(dst):
                 if field.compare:
                     old = getattr(src, field.name)
@@ -714,7 +720,7 @@ class DiffBuilder:
                     if field.name.startswith("on_"):
                         old = old is not None
                         new = new is not None
-                    self._compare_values(parent, path, field.name, old, new, frozen)
+                    self._compare_values(dst, path, field.name, old, new, frozen)
             if hasattr(src, "_i"):
                 dst._i = src._i  # patch replaced control ID with an old one
             self._dataclass_removed(src)
@@ -764,6 +770,8 @@ class DiffBuilder:
     def _dataclass_added(self, item, parent, frozen):
         if dataclasses.is_dataclass(item):
             if parent:
+                if parent is item:
+                    raise Exception(f"Parent is the same as item: {item}")
                 item._parent = weakref.ref(parent)
             if frozen:
                 item._frozen = frozen
@@ -813,6 +821,8 @@ class DiffBuilder:
             # print("\n_configure_dataclass:", item, frozen, configure_setattr_only)
 
             if parent:
+                if parent is item:
+                    raise Exception(f"Parent is the same as item: {item}")
                 item._parent = weakref.ref(parent)
 
             if hasattr(item, "_frozen"):

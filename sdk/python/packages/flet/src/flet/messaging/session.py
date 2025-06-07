@@ -95,24 +95,31 @@ class Session:
         patch, added_controls, removed_controls = self.__get_update_control_patch(
             control=control, prev_control=control
         )
-        if len(patch) > 1:
-            for removed_control in removed_controls:
-                if not any(added._i == removed_control._i for added in added_controls):
-                    removed_control.will_unmount()
-                self.__index.pop(removed_control._i, None)
 
+        # print(f"\n\nremoved_controls: ({len(removed_controls)})")
+        # for c in removed_controls:
+        #     print(f"\n\nremoved_control: {c._c}({c._i} - {id(c)})")
+
+        for removed_control in removed_controls:
+            if not any(added._i == removed_control._i for added in added_controls):
+                removed_control.will_unmount()
+            self.__index.pop(removed_control._i, None)
+
+        if len(patch) > 1:
             self.connection.send_message(
                 ClientMessage(
                     ClientAction.PATCH_CONTROL, PatchControlBody(control._i, patch)
                 )
             )
 
-            for added_control in added_controls:
-                self.__index[added_control._i] = added_control
-                if not any(
-                    removed._i == added_control._i for removed in removed_controls
-                ):
-                    added_control.did_mount()
+        # print(f"\n\nadded_controls: ({len(added_controls)})")
+        # for ac in added_controls:
+        #     print(f"\n\nadded_control: {ac._c}({ac._i} - {id(ac)})")
+
+        for added_control in added_controls:
+            self.__index[added_control._i] = added_control
+            if not any(removed._i == added_control._i for removed in removed_controls):
+                added_control.did_mount()
 
     def apply_patch(self, control_id: int, patch: dict[str, Any]):
         if control := self.__index.get(control_id):
@@ -149,7 +156,7 @@ class Session:
     ):
         control = self.__index.get(control_id)
         if not control:
-            # control not found
+            logger.debug(f"Control with ID {control_id} not found.")
             return
 
         field_name = f"on_{event_name}"
@@ -193,6 +200,7 @@ class Session:
 
                 if UpdateBehavior.auto_update_enabled():
                     self.auto_update(control)
+
         except Exception as ex:
             tb = traceback.format_exc()
             self.error(f"Exception in '{field_name}': {ex}\n{tb}")
@@ -243,12 +251,5 @@ class Session:
         )
 
         # print("\n\npatch:", patch)
-        # print(f"\n\nadded_controls: ({len(added_controls)})")
-        # for ac in added_controls:
-        #     print(f"\n\nadded_control: {ac._c}({ac._i})")
-
-        # print(f"\n\nremoved_controls: ({len(removed_controls)})")
-        # for c in removed_controls:
-        #     print(f"\n\nremoved_control: {c._c}({c._i})")
 
         return patch.to_message(), added_controls, removed_controls

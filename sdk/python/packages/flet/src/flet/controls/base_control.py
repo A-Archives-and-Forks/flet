@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import sys
-import weakref
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, Union
 
@@ -121,11 +120,15 @@ class BaseControl:
 
         self.__method_calls: dict[str, asyncio.Event] = {}
         self.__method_call_results: dict[asyncio.Event, tuple[Any, Optional[str]]] = {}
-        control_id = self._i
-        weakref.finalize(
-            self,
-            lambda: controls_log.debug(f"Control was garbage collected: {control_id}"),
-        )
+        # control_id = self._i
+        # object_id = id(self)
+        # ctrl_type = self._c
+        # weakref.finalize(
+        #     self,
+        #     lambda: controls_log.debug(
+        #         f"Control was garbage collected: {ctrl_type}({control_id} - {object_id})"
+        #     ),
+        # )
 
     def __hash__(self) -> int:
         return object.__hash__(self)
