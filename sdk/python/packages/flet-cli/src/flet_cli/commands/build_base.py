@@ -428,7 +428,8 @@ class BaseBuildCommand(BaseFlutterCommand):
             dest="web_renderer",
             type=str.lower,
             choices=["auto", "canvaskit", "skwasm"],
-            help="Flutter web renderer to use (web only) [env: FLET_WEB_RENDERER=]",
+            help="Flutter web renderer to use (web only), default: canvaskit "
+            "[env: FLET_WEB_RENDERER=]",
         )
         parser.add_argument(
             "--route-url-strategy",
@@ -1289,10 +1290,15 @@ class BaseBuildCommand(BaseFlutterCommand):
                 or self.get_pyproject("tool.flet.web.route_url_strategy")
                 or "path"
             ),
+            # "canvaskit" (dart2js), not "auto": with "auto" Chromium browsers
+            # select the dart2wasm/skwasm build, where every JS <-> Dart byte
+            # buffer crossing pays a WasmGC boundary conversion instead of a
+            # memcpy. Pyodide apps stream bytes constantly (protocol frames,
+            # DataChannels) — measured ~6-7x slower frame display vs canvaskit.
             "web_renderer": (
                 self.options.web_renderer
                 or self.get_pyproject("tool.flet.web.renderer")
-                or "auto"
+                or "canvaskit"
             ),
             "pwa_background_color": (
                 self.options.pwa_background_color
