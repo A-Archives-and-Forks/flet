@@ -1,3 +1,7 @@
+## 0.86.1
+
+_No changes in the `flet` Dart package; version bumped for release coordination with the web client's readable app-package download errors ([#6680](https://github.com/flet-dev/flet/pull/6680))._
+
 ## 0.86.0
 
 _No changes in the `flet` Dart package; version bumped for release coordination with the multi-version bundled CPython support on the Python side ([#6577](https://github.com/flet-dev/flet/pull/6577))._
