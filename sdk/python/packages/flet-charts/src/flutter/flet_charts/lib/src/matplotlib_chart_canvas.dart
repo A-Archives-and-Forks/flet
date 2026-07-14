@@ -8,7 +8,13 @@ import 'package:flutter/material.dart';
 
 /// Display widget for matplotlib WebAgg-style image streams.
 ///
-/// Two rendering strategies, picked at runtime by platform:
+/// Raw RGBA full frames (opcode 0x04, sent on local transports) take the
+/// same path in both strategies: one `ui.decodeImageFromPixels` upload,
+/// swap the displayed image, dispose the old one — no PNG decode, no
+/// compositing, at most one live image, so it is safe on web/WASM too.
+///
+/// PNG full/diff frames (remote WebSocket) use two rendering strategies,
+/// picked at runtime by platform:
 ///
 /// - **GPU + flatten** (native): keeps an `_backdrop` plus a list of pending
 ///   diff `ui.Image`s, paints all of them per frame, and bakes them into a
@@ -35,21 +41,8 @@ class MatplotlibChartCanvasControl extends StatefulWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Shared helpers
+// Shared base
 // ---------------------------------------------------------------------------
-
-Uint8List _extractBytes(dynamic args) {
-  final v = args is Map ? args["bytes"] : args;
-  if (v is Uint8List) return v;
-  if (v is ByteData) {
-    return v.buffer.asUint8List(v.offsetInBytes, v.lengthInBytes);
-  }
-  if (v is List<int>) return Uint8List.fromList(v);
-  if (v is List && v.every((e) => e is int)) {
-    return Uint8List.fromList(v.cast<int>());
-  }
-  throw ArgumentError("Expected bytes for image data, got ${v.runtimeType}");
-}
 
 abstract class _MatplotlibChartCanvasStateBase
     extends State<MatplotlibChartCanvasControl> {
@@ -60,15 +53,30 @@ abstract class _MatplotlibChartCanvasStateBase
   Size _lastSize = Size.zero;
   int _lastResize = DateTime.now().millisecondsSinceEpoch;
 
+  DataChannel? _channel;
+  StreamSubscription<Uint8List>? _channelSub;
+
   @override
-  void initState() {
-    super.initState();
-    widget.control.addInvokeMethodListener(_invokeMethod);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Open the data channel lazily on first dependency lookup — we need
+    // BuildContext to reach FletBackend, which isn't available in initState.
+    if (_channel != null) return;
+    _channel = FletBackend.of(context).openDataChannel();
+    _channelSub = _channel!.messages.listen(_onChannelFrame);
+    // Announce the channel to Python via the standard convention event.
+    widget.control.triggerEvent("data_channel_open", {
+      "channel_name": "frames",
+      "channel_id": _channel!.id,
+    });
   }
 
   @override
   void dispose() {
-    widget.control.removeInvokeMethodListener(_invokeMethod);
+    _channelSub?.cancel();
+    _channelSub = null;
+    _channel?.close();
+    _channel = null;
     disposeResources();
     super.dispose();
   }
@@ -78,23 +86,51 @@ abstract class _MatplotlibChartCanvasStateBase
 
   Future<void> applyFull(Uint8List bytes);
   Future<void> applyDiff(Uint8List bytes);
+  Future<void> applyRaw(Uint8List payload);
   Future<void> clearAll();
   CustomPainter buildPainter();
 
-  Future<dynamic> _invokeMethod(String name, dynamic args) async {
-    switch (name) {
-      case "apply_full":
-        await _enqueue(() => applyFull(_extractBytes(args)));
-        return;
-      case "apply_diff":
-        await _enqueue(() => applyDiff(_extractBytes(args)));
-        return;
-      case "clear":
-        await _enqueue(clearAll);
-        return;
+  // 1-byte ack sent back to Python after each apply completes. Restores
+  // round-trip backpressure: matplotlib's producer side keeps `_waiting`
+  // set until this ack arrives, so frames don't pile up in the Dart-side
+  // queue during interactive drags.
+  static final Uint8List _frameAppliedAck = Uint8List.fromList([0xFF]);
+
+  /// Inbound DataChannel frame. Wire format:
+  ///   [0x01][PNG bytes]                    → apply_full
+  ///   [0x02][PNG bytes]                    → apply_diff
+  ///   [0x03]                               → clear
+  ///   [0x04][w u32 LE][h u32 LE][RGBA8888] → apply_raw (premultiplied)
+  void _onChannelFrame(Uint8List bytes) {
+    if (bytes.isEmpty) return;
+    // Zero-copy slice of the same underlying buffer.
+    final payload = Uint8List.sublistView(bytes, 1);
+    switch (bytes[0]) {
+      case 0x01:
+        _enqueueAndAck(() => applyFull(payload));
+        break;
+      case 0x02:
+        _enqueueAndAck(() => applyDiff(payload));
+        break;
+      case 0x03:
+        _enqueueAndAck(clearAll);
+        break;
+      case 0x04:
+        _enqueueAndAck(() => applyRaw(payload));
+        break;
       default:
-        throw Exception("Unknown MatplotlibChartCanvas method: $name");
+        debugPrint(
+            "MatplotlibChartCanvas: unknown data-channel opcode 0x${bytes[0].toRadixString(16)}");
+        // Ack anyway so a newer Python side never hangs its receive loop
+        // waiting on a frame this (older) client can't apply.
+        _channel?.send(_frameAppliedAck);
     }
+  }
+
+  void _enqueueAndAck(Future<void> Function() task) {
+    _enqueue(task).whenComplete(() {
+      _channel?.send(_frameAppliedAck);
+    });
   }
 
   Future<void> _enqueue(Future<void> Function() task) {
@@ -131,6 +167,48 @@ abstract class _MatplotlibChartCanvasStateBase
       },
     );
   }
+}
+
+/// A parsed raw-frame payload: `[w u32 LE][h u32 LE][RGBA8888]`.
+class _RawFrame {
+  final int width;
+  final int height;
+  final Uint8List pixels; // owned copy
+  _RawFrame({required this.width, required this.height, required this.pixels});
+}
+
+/// Parses and validates a 0x04 raw-frame payload. Returns null (and logs)
+/// on malformed input — the caller skips the frame; the ack still goes out
+/// via `_enqueueAndAck`, so Python never stalls on a bad frame.
+_RawFrame? _parseRawFrame(Uint8List payload) {
+  if (payload.length < 8) return null;
+  final bd = ByteData.sublistView(payload, 0, 8);
+  final w = bd.getUint32(0, Endian.little);
+  final h = bd.getUint32(4, Endian.little);
+  if (w == 0 || h == 0 || payload.length - 8 != w * h * 4) {
+    debugPrint(
+        "MatplotlibChartCanvas: bad raw frame ${payload.length - 8} != $w*$h*4");
+    return null;
+  }
+  // Owned copy: the transport may reuse the inbound buffer, Safari's WASM
+  // runtime can free views across async gaps (same reason _decodeImage
+  // copies), and decodeImageFromPixels implementations may read from the
+  // underlying buffer after this call returns.
+  final pixels = Uint8List.fromList(Uint8List.sublistView(payload, 8));
+  return _RawFrame(width: w, height: h, pixels: pixels);
+}
+
+/// Uploads premultiplied RGBA8888 pixels as a [ui.Image].
+Future<ui.Image> _imageFromRgba(Uint8List rgba, int width, int height) {
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    rgba,
+    width,
+    height,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
 }
 
 /// Decodes PNG bytes to a [ui.Image], staying GPU-resident.
@@ -201,6 +279,17 @@ class _GpuMatplotlibChartCanvasState
     if (_diffs.length >= _flattenInterval) {
       await _flatten();
     }
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Future<void> applyRaw(Uint8List payload) async {
+    final f = _parseRawFrame(payload);
+    if (f == null) return;
+    final image = await _imageFromRgba(f.pixels, f.width, f.height);
+    // Raw frames are always full frames — replace and drop pending diffs.
+    _replaceBackdrop(image);
+    _disposeDiffs();
     if (mounted) setState(() {});
   }
 
@@ -326,7 +415,22 @@ class _CpuMatplotlibChartCanvasState
     _bbWidth = decoded.width;
     _bbHeight = decoded.height;
 
-    final image = await _makeImage(decoded.bytes, decoded.width, decoded.height);
+    final image =
+        await _imageFromRgba(decoded.bytes, decoded.width, decoded.height);
+    _swapDisplay(image);
+  }
+
+  @override
+  Future<void> applyRaw(Uint8List payload) async {
+    final f = _parseRawFrame(payload);
+    if (f == null) return;
+    // Keep the backbuffer coherent so a later PNG diff (mixed-mode safety
+    // net) still composites correctly. Raw pixels are already premultiplied,
+    // matching rawRgba readbacks.
+    _backbuffer = f.pixels;
+    _bbWidth = f.width;
+    _bbHeight = f.height;
+    final image = await _imageFromRgba(f.pixels, f.width, f.height);
     _swapDisplay(image);
   }
 
@@ -349,7 +453,7 @@ class _CpuMatplotlibChartCanvasState
       _bbWidth = decoded.width;
       _bbHeight = decoded.height;
       final image =
-          await _makeImage(decoded.bytes, decoded.width, decoded.height);
+          await _imageFromRgba(decoded.bytes, decoded.width, decoded.height);
       _swapDisplay(image);
       return;
     }
@@ -365,7 +469,7 @@ class _CpuMatplotlibChartCanvasState
       }
     }
 
-    final image = await _makeImage(_backbuffer!, _bbWidth, _bbHeight);
+    final image = await _imageFromRgba(_backbuffer!, _bbWidth, _bbHeight);
     _swapDisplay(image);
   }
 
@@ -399,18 +503,6 @@ class _CpuMatplotlibChartCanvasState
     } finally {
       img.dispose();
     }
-  }
-
-  Future<ui.Image> _makeImage(Uint8List rgba, int width, int height) {
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      rgba,
-      width,
-      height,
-      ui.PixelFormat.rgba8888,
-      completer.complete,
-    );
-    return completer.future;
   }
 
   void _swapDisplay(ui.Image newImage) {

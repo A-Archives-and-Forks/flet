@@ -28,4 +28,8 @@ repos:
     hooks:
       - id: typos
         args: [ --config, sdk/python/_typos.toml ]
-        exclude: /templates/
+        # Generated *.pbxproj files contain random hex UUIDs that typos
+        # misreads as misspelled words; flet-mcp's icons.json vendors
+        # Google's icon search tags, which deliberately include common
+        # misspellings for typo-tolerant search.
+        exclude: (/templates/|\.pbxproj$|flet_mcp/data/icons\.json$)

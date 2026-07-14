@@ -6,6 +6,7 @@ docs:
   - getting-started/installation.md
   - getting-started/create-flet-app.md
   - getting-started/running-app.md
+  - getting-started/integration-testing.md
   - getting-started/testing-on-mobile.md
   Tutorials:
   - Calculator: tutorials/calculator.md
@@ -35,10 +36,12 @@ docs:
     Session Storage: cookbook/session-storage.md
     PubSub: cookbook/pub-sub.md
     Subprocess: cookbook/subprocess.md
+    Multiprocessing: cookbook/multiprocessing.md
     Logging: cookbook/logging.md
     Authentication: cookbook/authentication.md
     Encrypting sensitive data: cookbook/encrypting-sensitive-data.md
     Declarative dialogs: cookbook/declarative-dialogs.md
+    Flet MCP server: cookbook/flet-mcp.md
   Publishing Flet app:
     _index: publish/index.md
     Android: publish/android.md
@@ -68,10 +71,19 @@ docs:
     Release notes: updates/release-notes.md
     Breaking changes and deprecations:
       _index: updates/breaking-changes/index.md
+      v0.86.0:
+        App files ship unpacked in a read-only bundle; storage dirs reworked: updates/breaking-changes/v0-86-0/app-files-unpacked-read-only-bundle.md
+        "Android: site-packages ship zipped; some packages need extract_packages": updates/breaking-changes/v0-86-0/android-extract-packages.md
+        "Android: x86 removed from target architectures": updates/breaking-changes/v0-86-0/android-x86-arch-removed.md
+        Default bundled Python version is now 3.14: updates/breaking-changes/v0-86-0/default-bundled-python-3-14.md
+        App and packages are compiled to .pyc by default: updates/breaking-changes/v0-86-0/compile-on-by-default.md
+        flet.version.pyodide_version and PYODIDE_VERSION removed: updates/breaking-changes/v0-86-0/removed-pyodide-version-export.md
+        Flet protocol framing upgraded for DataChannel support: updates/breaking-changes/v0-86-0/data-channel-protocol-upgrade.md
+        flet build --clear-cache flag deprecated: updates/breaking-changes/v0-86-0/deprecated-clear-cache-flag.md
       v0.85.0:
-        Deprecated spacing and border helper functions removed: updates/breaking-changes/removed-spacing-border-helpers.md
-        DragTargetEvent coordinate fields deprecated: updates/breaking-changes/deprecated-drag-target-event-coordinates.md
-        Video control APIs deprecated: updates/breaking-changes/deprecated-video-apis.md
+        Deprecated spacing and border helper functions removed: updates/breaking-changes/v0-85-0/removed-spacing-border-helpers.md
+        DragTargetEvent coordinate fields deprecated: updates/breaking-changes/v0-85-0/deprecated-drag-target-event-coordinates.md
+        Video control APIs deprecated: updates/breaking-changes/v0-85-0/deprecated-video-apis.md
     Compatibility policy: updates/compatibility-policy.md
   Reference:
     _index: reference/index.md
@@ -84,6 +96,7 @@ docs:
         _index: controls/ads/index.md
         BannerAd: controls/ads/bannerad.md
         BaseAd: controls/ads/basead.md
+        ConsentManager: controls/ads/consentmanager.md
         InterstitialAd: controls/ads/interstitialad.md
       AlertDialog: controls/alertdialog.md
       AnimatedSwitcher: controls/animatedswitcher.md
@@ -182,7 +195,7 @@ docs:
       Dropdown:
         _index: controls/dropdown/index.md
         DropdownOption: controls/dropdownoption.md
-      #DropdownM2: controls/dropdownm2.md
+      DropdownM2: controls/dropdownm2.md
       ExpansionPanel: controls/expansionpanel.md
       ExpansionPanelList: controls/expansionpanellist.md
       ExpansionTile: controls/expansiontile.md
@@ -255,6 +268,7 @@ docs:
       Radio: controls/radio.md
       RadioGroup: controls/radiogroup.md
       RangeSlider: controls/rangeslider.md
+      RawImage: controls/rawimage.md
       ReorderableDragHandle: controls/reorderabledraghandle.md
       ReorderableListView: controls/reorderablelistview.md
       ResponsiveRow: controls/responsiverow.md
@@ -370,6 +384,11 @@ docs:
           GitHubOAuthProvider: types/auth/githuboauthprovider.md
           GoogleOAuthProvider: types/auth/googleoauthprovider.md
       - types/auth/user.md
+      Testing:
+      - types/testing/flettestapp.md
+      - types/testing/tester.md
+      - types/testing/finder.md
+      - types/testing/disposalmode.md
       Base Controls:
       - controls/adaptivecontrol.md
       - controls/basecontrol.md
@@ -384,6 +403,8 @@ docs:
       Classes:
       - Ads:
         - controls/ads/types/adrequest.md
+        - controls/ads/types/consentdebugsettings.md
+        - controls/ads/types/consentrequestparameters.md
       - types/alignment.md
       - types/androidbuildversion.md
       - types/animation.md
@@ -471,6 +492,7 @@ docs:
       - types/colorfilter.md
       - types/context.md
       - types/controlstate.md
+      - types/datachannel.md
       - types/decorationimage.md
       - DeviceInfo:
           _index: types/deviceinfo/index.md
@@ -483,9 +505,7 @@ docs:
       - types/duration.md
       - types/filepickerfile.md
       - types/filepickeruploadfile.md
-      - types/finder.md
       - types/flip.md
-      - types/flettestapp.md
       - Geolocator:
         - services/geolocator/types/foregroundnotificationconfiguration.md
         - services/geolocator/types/geolocatorandroidconfiguration.md
@@ -587,7 +607,6 @@ docs:
       - types/size.md
       - types/strutstyle.md
       - types/templateroute.md
-      - types/tester.md
       - types/textdecoration.md
       - types/textselection.md
       - types/textspan.md
@@ -681,7 +700,10 @@ docs:
       - types/value.md
       Enums:
       - Ads:
+        - controls/ads/types/consentstatus.md
+        - controls/ads/types/debuggeography.md
         - controls/ads/types/precisiontype.md
+        - controls/ads/types/privacyoptionsrequirementstatus.md
       - types/animatedswitchertransition.md
       - types/animationcurve.md
       - types/applifecyclestate.md
@@ -792,6 +814,7 @@ docs:
       - types/canvasresizeevent.md
       - types/contextmenudismissevent.md
       - types/contextmenuselectevent.md
+      - types/datachannelopenevent.md
       - types/datacolumnsortevent.md
       - types/datepickerentrymodechangeevent.md
       - types/dismissibledismissevent.md
@@ -864,6 +887,8 @@ docs:
       - types/onmounted.md
       - types/onunmounted.md
       - types/onupdated.md
+      - types/run.md
+      - types/run_async.md
       - types/usecallback.md
       - types/usecontext.md
       - types/useeffect.md
@@ -878,15 +903,18 @@ docs:
     CLI:
       _index: cli/index.md
       flet build: cli/flet-build.md
+      flet clean: cli/flet-clean.md
       flet create: cli/flet-create.md
       flet debug: cli/flet-debug.md
       flet devices: cli/flet-devices.md
       flet doctor: cli/flet-doctor.md
       flet emulators: cli/flet-emulators.md
+      flet mcp: cli/flet-mcp.md
       flet pack: cli/flet-pack.md
       flet publish: cli/flet-publish.md
       flet run: cli/flet-run.md
       flet serve: cli/flet-serve.md
+      flet test: cli/flet-test.md
     Python packages built in Flet: reference/binary-packages-android-ios.md
     Environment Variables: reference/environment-variables.md
 

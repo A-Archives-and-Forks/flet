@@ -42,6 +42,24 @@ if sys.platform == "emscripten":
 ```
 :::
 
+:::note[Pyodide and Python version]
+The Python version you choose for `flet build web` / `flet publish` pins a
+specific Pyodide release — see
+[Choosing a Python version](../../index.md#choosing-a-python-version) for the
+full matrix and resolution rules. In short:
+
+| Python | Pyodide   |
+| ------ | --------- |
+| 3.14   | 314.0.0   |
+| 3.13   | 0.29.4    |
+| 3.12   | 0.27.7    |
+
+The matching Pyodide runtime is downloaded into the build output and cached
+under `~/.flet/pyodide/<version>/` on first use. The older `0.27.5` bundle
+that used to ship inside the build template has been removed in favour of
+this versioned per-build download.
+:::
+
 ## Differences
 
 There are two ways to publish a static website: [`flet build web`](#flet-build-web) and [`flet publish`](#flet-publish).
@@ -188,9 +206,17 @@ route_url_strategy = "hash"
 
 Selects the Flutter web renderer:
 
-- `auto` (default) - let Flutter choose the best renderer
-- `canvaskit`
-- `skwasm`
+- `canvaskit` (default) - CanvasKit renderer, with the app compiled to JavaScript
+- `skwasm` - Skia WebAssembly renderer, with the app compiled to WebAssembly
+- `auto` - let Flutter pick the renderer based on the browser
+
+:::note
+The default is `canvaskit`, not `auto`. With `auto`, Chromium-based browsers
+pick `skwasm`, where every byte buffer passed between JavaScript and Dart pays
+a costly WebAssembly boundary conversion. Flet web apps exchange bytes with
+the Python runtime on every UI update, so `canvaskit` is significantly faster
+for them.
+:::
 
 #### Resolution order
 
@@ -198,20 +224,20 @@ Its value is determined in the following order of precedence:
 
 1. [`--web-renderer`](../../../cli/flet-build.md#--web-renderer)
 2. `[tool.flet.web].renderer`
-3. `"auto"`
+3. `"canvaskit"`
 
 #### Example
 
 <Tabs groupId="flet-build--pyproject-toml">
 <TabItem value="flet-build" label="flet build">
 ```bash
-flet build web --web-renderer canvaskit
+flet build web --web-renderer skwasm
 ```
 </TabItem>
 <TabItem value="pyproject-toml" label="pyproject.toml">
 ```toml
 [tool.flet.web]
-renderer = "canvaskit"
+renderer = "skwasm"
 ```
 </TabItem>
 </Tabs>

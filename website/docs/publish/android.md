@@ -72,12 +72,23 @@ requires distributing the correct APK for each device.
 
 #### Supported target architectures
 
-The following target architectures are supported:
+The following target architectures are supported, for every
+[bundled Python version](index.md#choosing-a-python-version):
 
-- [`arm64-v8a`](https://developer.android.com/ndk/guides/abis#arm64-v8a)
-- [`armeabi-v7a`](https://developer.android.com/ndk/guides/abis#v7a)
-- [`x86_64`](https://developer.android.com/ndk/guides/abis#86-64)
-- [`x86`](https://developer.android.com/ndk/guides/abis#x86)
+- [`arm64-v8a`](https://developer.android.com/ndk/guides/abis#arm64-v8a) (64-bit)
+- [`x86_64`](https://developer.android.com/ndk/guides/abis#x86-64) (64-bit)
+- [`armeabi-v7a`](https://developer.android.com/ndk/guides/abis#v7a) (32-bit)
+
+The 32-bit `x86` ABI is not supported — specifying it fails the build since Flet 0.86.0
+(see the [migration guide](../updates/breaking-changes/v0-86-0/android-x86-arch-removed.md)).
+
+:::note
+Flet bundles [its own CPython builds](https://github.com/flet-dev/python-build) for
+Android, published for all three ABIs on every supported Python version — including
+32-bit `armeabi-v7a`, which upstream CPython dropped in 3.13
+([PEP 738](https://peps.python.org/pep-0738/)). By default, an app is built for all
+supported architectures.
+:::
 
 #### Resolution order
 
@@ -87,8 +98,9 @@ Its value is determined in the following order of precedence:
 2. `[tool.flet.android].split_per_abi`
 3. `false`
 
-When enabled, 3 APKs are produced by default, one for each of the following ABIs: `arm64-v8a`,
-`armeabi-v7a`, and `x86_64`. These can be customized by setting [`target architectures`](index.md#target-architecture).
+When enabled, one APK is produced per ABI — by default, one for each
+architecture the bundled Python version supports (see above). These can be
+customized by setting [`target architectures`](index.md#target-architecture).
 
 #### Example
 
@@ -763,6 +775,97 @@ adaptive_icon_background = "#0B6BFF"
 ```
 </TabItem>
 </Tabs>
+
+## Extract packages
+
+On Android, pure Python code is packaged into stored zip assets and imported in place with
+[`zipimport`](https://docs.python.org/3/library/zipimport.html). Native extension modules are
+loaded memory-mapped directly from the APK. This keeps APKs smaller and avoids unpacking all
+site-packages on first launch.
+
+Most packages work from inside the zip. But packages that read bundled **data files** through a real
+filesystem path — for example with `__file__` or `pkg_resources`, instead of the zip-safe
+[`importlib.resources`](https://docs.python.org/3/library/importlib.resources.html) — may fail at
+runtime because their data lives inside `sitepackages.zip`, where plain `open()` cannot read it.
+
+List such packages in `extract_packages` to ship them extracted to the app's files directory
+instead of inside `sitepackages.zip`. Flet extracts the listed package directories and everything
+under them, so `__file__`-relative reads work again.
+
+Most packages that bundle data (such as `flet` or `certifi`) read it through `importlib.resources`, which
+is zip-safe, so they need no entry here. Only add packages that actually fail to find their data
+when imported from the zip.
+
+### Symptoms
+
+The build succeeds, but the app crashes or errors on the device when the package is imported or
+first used. The traceback usually contains a path where `sitepackages.zip` or `stdlib.zip` appears
+as a directory component, for example (`matplotlib`):
+
+```bash
+FileNotFoundError: [Errno 2] No such file or directory:
+  '/data/user/0/<applicationId>/files/.../sitepackages.zip/matplotlib/mpl-data/matplotlibrc'
+```
+
+`NotADirectoryError` or `OSError` with a similar `sitepackages.zip/...` path is also a common sign
+that the package computed a data path from `__file__` and tried to read it as a regular file.
+
+If this happens with one of your dependencies, add that package to `extract_packages` and consider
+reporting it in [Flet discussions](https://github.com/flet-dev/flet/discussions) or opening a PR so
+it can be added to the known packages list.
+
+### Resolution order
+
+1. [`--android-extract-packages`](../cli/flet-build.md#--android-extract-packages)
+2. `[tool.flet.android].extract_packages`
+3. `[tool.flet].extract_packages`
+
+### Example
+
+Each entry is the package's **import name** — its top-level directory under site-packages — not
+necessarily its PyPI distribution name. For example, use `sklearn`, not `scikit-learn`; use `cv2`,
+not `opencv-python`.
+
+<Tabs groupId="flet-build--pyproject-toml">
+<TabItem value="flet-build" label="flet build">
+```bash
+flet build apk --android-extract-packages package1 package2
+```
+</TabItem>
+<TabItem value="pyproject-toml" label="pyproject.toml">
+```toml
+[tool.flet.android]
+extract_packages = ["package1", "package2"]
+```
+</TabItem>
+</Tabs>
+
+### Wildcards
+
+An entry is a path relative to site-packages and matches that path and everything under it.
+Entries may also contain `*` and `?` wildcards, matched against the top-level directory name:
+
+```toml
+[tool.flet.android]
+extract_packages = ["somepackage*"]
+```
+
+The wildcard form can also extract a sibling `somepackage-<version>.dist-info/` directory.
+Use it for packages that read their metadata or data files through `pkg_resources`.
+
+### Affected packages
+
+Below are known packages that need to be extracted to work on Android:
+
+| Package (PyPI)  | Entry              | Reason                                                                                 |
+|-----------------|--------------------|----------------------------------------------------------------------------------------|
+| `matplotlib`    | `"matplotlib"`     | reads `mpl-data` (fonts, `matplotlibrc`) relative to `__file__`                        |
+| `scikit-learn`  | `"sklearn"`        | loads bundled data files through `__file__`-relative paths                             |
+| `opencv-python` | `"cv2"`            | resolves config files and loads its native extension through `__file__`-relative paths |
+| `astropy`       | `"astropy"`        | reads `astropy/CITATION` via `__file__` at import                                      |
+| `thinc`         | `"thinc"`          | reads `thinc/backends/_custom_kernels.cu` via `__file__` at import                     |
+| `spacy`         | `"spacy", "thinc"` | imports `thinc` at load and reads its own language data via `__file__`; list both      |
+
 ## ADB Tips
 
 [Android Debug Bridge (adb)](https://developer.android.com/tools/adb) is a
