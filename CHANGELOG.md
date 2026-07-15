@@ -1,3 +1,14 @@
+## 0.86.1
+
+### Improvements
+
+* `flet-mcp`'s `get_api` tool now covers **top-level callables** — the app entry point (`run`), reactive hooks (`use_state`, `use_ref`, `use_effect`, …), and decorators (`component`, `memo`, `observable`) — which previously returned `not found` because only classes were indexed. A new `functions` bucket in the API builder extracts each package's re-exported public callables and renders them with a `signature:` line. `get_api` also **resolves enum member lookups inline**: `get_api("Colors", query="RED")` now returns the matching members instead of erroring with a redirect to `search_enum_members`. Both changes remove wasted agent round-trips observed in production usage by @FeodorFitsner.
+
+### Bug fixes
+
+* Fix the cryptic `shutil.ReadError: ... is not a zip file` failure in web apps when the app package download fails. The Pyodide worker piped the `pyfetch(app_package_url)` response straight into `unpack_archive()` without a status check, so any non-2xx response (transient server 500, expired auth 401, deleted app 404) wrote the JSON/HTML error body to a temp file and crashed while unpacking it. The worker now checks `response.ok` and raises a readable `Failed to download app package: HTTP <status> <url> — <body>` error, including the first 200 chars of the error body. Applied to both the Flet web client and the `flet build` template ([#6680](https://github.com/flet-dev/flet/pull/6680)) by @FeodorFitsner.
+* Remove unused `BasePage` return type and import from `BaseControl` and `ControlEvent` ([#6606](https://github.com/flet-dev/flet/pull/6606)) by @Iaw4tch.
+
 ## 0.86.0
 
 ### New features

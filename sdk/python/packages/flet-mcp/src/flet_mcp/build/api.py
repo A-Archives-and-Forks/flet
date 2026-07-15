@@ -256,6 +256,62 @@ def _extract_methods(cls: griffe.Class) -> list[dict[str, Any]]:
     return methods
 
 
+def _function_entry(func: griffe.Function, name: str) -> dict[str, Any]:
+    """Serialize a top-level callable (function/decorator/hook)."""
+    args: list[dict[str, Any]] = []
+    for param in func.parameters:
+        if param.name in ("self", "cls"):
+            continue
+        args.append(
+            {
+                "name": param.name,
+                "type": _annotation_str(param.annotation),
+                "default": _default_str(param.default),
+            }
+        )
+    module_path = func.canonical_path.rsplit(".", 1)[0]
+    entry: dict[str, Any] = {
+        "name": name,
+        "module": module_path,
+        "package": _package_from_module(module_path),
+        "kind": "function",
+        "summary": _first_line(func.docstring),
+        "docstring": _full_docstring(func.docstring),
+        "args": args,
+        "return_type": _annotation_str(func.annotation),
+    }
+    if "async" in func.labels:
+        entry["async"] = True
+    return entry
+
+
+def _collect_public_functions(
+    module: griffe.Module, functions: list[dict], seen: set[str]
+) -> None:
+    """Index a package's top-level public callables — the module-level
+    functions re-exported from the package root: the app entry point
+    (``run``/``app``), reactive hooks (``use_state``/``use_ref``/…), and
+    decorators (``component``/``memo``/``observable``). Only the top module's
+    direct members are scanned — that is the public surface; nested/internal
+    helpers are skipped. Re-export aliases are resolved to their target."""
+    for name, obj in module.members.items():
+        if name.startswith("_"):
+            continue
+        target: Any = obj
+        if isinstance(obj, griffe.Alias):
+            try:
+                target = obj.final_target
+            except Exception:
+                continue
+        if not isinstance(target, griffe.Function):
+            continue
+        cp = target.canonical_path
+        if cp in seen:
+            continue
+        seen.add(cp)
+        functions.append(_function_entry(target, name))
+
+
 def _extract_enum_members(cls: griffe.Class) -> list[dict[str, str]]:
     members: list[dict[str, str]] = []
     for name, member in cls.members.items():
@@ -563,6 +619,7 @@ def build_api(output_path: Path, packages: list[str] | None = None) -> dict[str,
     events: list[dict] = []
     types: list[dict] = []
     enums: list[dict] = []
+    functions: list[dict] = []
 
     loaded: list[griffe.Module] = []
     for pkg in packages:
@@ -581,6 +638,11 @@ def build_api(output_path: Path, packages: list[str] | None = None) -> dict[str,
     for module in loaded:
         _walk_module(module, controls, events, types, enums)
 
+    # Pass 3: top-level public callables (entry point, hooks, decorators).
+    seen_functions: set[str] = set()
+    for module in loaded:
+        _collect_public_functions(module, functions, seen_functions)
+
     # Inject Icons and CupertinoIcons from JSON files (not Python Enums)
     _inject_icon_enums(enums)
 
@@ -591,6 +653,7 @@ def build_api(output_path: Path, packages: list[str] | None = None) -> dict[str,
         "events": events,
         "types": types,
         "enums": enums,
+        "functions": functions,
         "cli": cli_help,
     }
 
@@ -602,6 +665,7 @@ def build_api(output_path: Path, packages: list[str] | None = None) -> dict[str,
         "events": len(events),
         "types": len(types),
         "enums": len(enums),
+        "functions": len(functions),
         "cli_commands": len(cli_help),
     }
     logger.info("API build stats: %s", stats)
