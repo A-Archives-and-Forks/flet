@@ -371,7 +371,10 @@ if _API_ON:
 
         Looks across visual controls, non-visual services, dataclass types
         (ButtonStyle, Padding, TextStyle, Border, Theme, ColorScheme, ...),
-        event classes, and enums (MainAxisAlignment, TextAlign, Icons, ...).
+        event classes, enums (MainAxisAlignment, TextAlign, Icons, ...), and
+        top-level callables — the app entry point (run), reactive hooks
+        (use_state, use_ref, use_effect, ...), and decorators (component,
+        memo, observable), rendered with a `signature:` line.
 
         This is the primary verification tool — when you have a name in mind,
         call this first. A "not found" response is a definitive negative: the
@@ -414,9 +417,12 @@ if _API_ON:
           vs the canvas Text shape) — the primary one is returned and the
           `note:` line lists the others with a dotted name that selects
           them, e.g. `get_api("canvas.Text")`.
-        * Neither applies to enums — use search_enum_members /
-          enum_has_member / find_icon there. Large enums (Icons,
-          CupertinoIcons) are always truncated to a sample.
+        * On an enum, `member`/`query` resolve inline to a ranked member
+          search (same result as search_enum_members) instead of erroring —
+          e.g. `get_api("Colors", query="RED")` lists the matching members.
+          For concept-based icon lookup ("delete", "user") prefer find_icon.
+          Large enums (Icons, CupertinoIcons) are truncated to a sample when
+          fetched whole.
 
         Errors are returned as JSON objects (`{"error": ...}`), sometimes
         with `available_members`/`available_files` hints.

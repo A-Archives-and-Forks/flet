@@ -187,6 +187,28 @@ RAW = {
             ],
         },
     ],
+    "functions": [
+        {
+            "name": "run",
+            "module": "flet",
+            "package": "flet",
+            "kind": "function",
+            "summary": "Run the app.",
+            "docstring": "Run the app.",
+            "args": [{"name": "target", "type": "Callable", "default": ""}],
+            "return_type": "None",
+        },
+        {
+            "name": "use_state",
+            "module": "flet.core.reactive",
+            "package": "flet",
+            "kind": "function",
+            "summary": "Reactive state hook.",
+            "docstring": "Reactive state hook.",
+            "args": [{"name": "initial", "type": "T", "default": ""}],
+            "return_type": "tuple[T, Callable]",
+        },
+    ],
 }
 
 
@@ -198,8 +220,9 @@ def store() -> ApiStore:
     s._events = {e["name"]: e for e in RAW["events"]}
     s._types = {t["name"]: t for t in RAW["types"]}
     s._enums = {e["name"]: e for e in RAW["enums"]}
+    s._functions = {f["name"]: f for f in RAW.get("functions", [])}
     s._by_name = {}
-    for bucket in ("controls", "types", "events", "enums"):
+    for bucket in ("controls", "types", "events", "functions", "enums"):
         for e in RAW[bucket]:
             s._by_name.setdefault(e["name"], []).append((bucket, e))
     return s
@@ -340,9 +363,38 @@ def test_member_wins_over_query(store):
     assert hit["member"]["name"] == "push_route"
 
 
-def test_enum_rejects_member_and_query(store):
-    assert "error" in store.get("TextAlign", query="left")
-    assert "error" in store.get("TextAlign", member="LEFT")
+def test_enum_member_and_query_resolve_inline(store):
+    # get_api on an enum with query/member now searches members inline
+    # instead of erroring (saves the caller a round-trip).
+    hit = store.get("TextAlign", query="left")
+    assert "error" not in hit
+    assert hit["kind"] == "enum"
+    assert [m["name"] for m in hit["members"]] == ["LEFT"]
+    # member= is treated as the same member search.
+    assert [m["name"] for m in store.get("TextAlign", member="LEFT")["members"]] == [
+        "LEFT"
+    ]
+    # Works for large enums too, rendered as a member list.
+    assert "REMOVE" in render_text(store.get("Icons", query="remove"))
+
+
+def test_enum_query_no_match_notes_search(store):
+    hit = store.get("TextAlign", query="zzz")
+    assert "error" not in hit
+    assert hit["members"] == []
+    assert "search_enum_members" in hit["note"]
+
+
+def test_function_lookup_and_render(store):
+    hit = store.get("run")
+    assert hit["kind"] == "function"
+    text = render_text(hit)
+    assert text.startswith("run (function) — Run the app.")
+    assert "signature: run(target: Callable) -> None" in text
+
+
+def test_hook_function_lookup(store):
+    assert store.get("use_state")["kind"] == "function"
 
 
 # ---------- enum member search ranking ----------
