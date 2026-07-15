@@ -8,6 +8,7 @@
 
 * Fix the cryptic `shutil.ReadError: ... is not a zip file` failure in web apps when the app package download fails. The Pyodide worker piped the `pyfetch(app_package_url)` response straight into `unpack_archive()` without a status check, so any non-2xx response (transient server 500, expired auth 401, deleted app 404) wrote the JSON/HTML error body to a temp file and crashed while unpacking it. The worker now checks `response.ok` and raises a readable `Failed to download app package: HTTP <status> <url> — <body>` error, including the first 200 chars of the error body. Applied to both the Flet web client and the `flet build` template ([#6680](https://github.com/flet-dev/flet/pull/6680)) by @FeodorFitsner.
 * Remove unused `BasePage` return type and import from `BaseControl` and `ControlEvent` ([#6606](https://github.com/flet-dev/flet/pull/6606)) by @Iaw4tch.
+* Fix `GestureDetector.allowed_devices` crashing with `type 'List<dynamic>' is not a subtype of type 'List<String?>?'` and preventing the control from rendering. Property values are deserialized from JSON as `List<dynamic>`, but the value was read via `get<List<String?>>(...)`, whose reified cast fails because a `List<dynamic>` is not a `List<String?>`. It's now read as `List<dynamic>` and each entry is converted to a string before parsing, restoring `supportedDevices` filtering for Flutter's `GestureDetector` ([#6684](https://github.com/flet-dev/flet/pull/6684)) by @TURBODRIVER.
 
 ## 0.86.0
 
