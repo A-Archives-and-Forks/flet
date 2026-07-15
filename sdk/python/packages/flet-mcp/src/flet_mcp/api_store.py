@@ -27,8 +27,8 @@ _MEMBER_KIND = {
 
 # Buckets in preference order for ambiguous names, and the `kind` value
 # stamped onto entries from buckets that don't carry their own.
-_BUCKET_RANK = {"controls": 0, "types": 1, "events": 2, "enums": 3}
-_BUCKET_KIND = {"types": "type", "events": "event"}
+_BUCKET_RANK = {"controls": 0, "types": 1, "events": 2, "functions": 3, "enums": 4}
+_BUCKET_KIND = {"types": "type", "events": "event", "functions": "function"}
 
 # Sphinx roles in docstrings (":attr:`style`", ":class:`~flet.Text`") are
 # docs-site markup — render them as plain backticked names.
@@ -191,6 +191,21 @@ def render_text(hit: dict[str, Any]) -> str:
     if hit.get("note"):
         lines.append(f"note: {hit['note']}")
 
+    # Top-level callables (ft.run, hooks, decorators): render a signature.
+    if hit.get("kind") == "function":
+        params = ", ".join(
+            a["name"]
+            + (f": {a['type']}" if a.get("type") else "")
+            + (f" = {a['default']}" if a.get("default") else "")
+            for a in hit.get("args") or []
+        )
+        prefix = "async " if hit.get("async") else ""
+        sig = f"{prefix}{name}({params})"
+        if hit.get("return_type"):
+            sig += f" -> {hit['return_type']}"
+        lines.append(f"signature: {sig}")
+        return "\n".join(lines)
+
     if hit.get("kind") == "large_enum":
         lines.append(f"total members: {hit.get('total_members')}")
         samples = [
@@ -240,6 +255,7 @@ class ApiStore:
         self._events: dict[str, dict] | None = None
         self._types: dict[str, dict] | None = None
         self._enums: dict[str, dict] | None = None
+        self._functions: dict[str, dict] | None = None
         self._by_name: dict[str, list[tuple[str, dict]]] | None = None
 
     def _load(self) -> dict[str, Any]:
@@ -251,12 +267,13 @@ class ApiStore:
             self._events = {e["name"]: e for e in self._raw.get("events", [])}
             self._types = {t["name"]: t for t in self._raw.get("types", [])}
             self._enums = {e["name"]: e for e in self._raw.get("enums", [])}
+            self._functions = {f["name"]: f for f in self._raw.get("functions", [])}
             # Names are NOT unique across (or even within) buckets — e.g.
             # the Text control vs the canvas Text shape. Keep every entry
             # per name so `get` can rank candidates instead of letting the
             # last dict insert silently win.
             self._by_name = {}
-            for bucket in ("controls", "types", "events", "enums"):
+            for bucket in ("controls", "types", "events", "functions", "enums"):
                 for e in self._raw.get(bucket, []):
                     self._by_name.setdefault(e["name"], []).append((bucket, e))
         return self._raw
@@ -346,9 +363,11 @@ class ApiStore:
         Member docstrings (properties/events/methods) are trimmed to their
         first sentence. Pass `member` for one member's full entry, or `query`
         for a case-insensitive substring filter over member names (`member`
-        wins if both are given). Enum responses use the same truncation as
-        `get_enum` for large enums; `member`/`query` don't apply to enums —
-        use search_enum_members / enum_has_member there.
+        wins if both are given). On an enum, `member`/`query` resolve inline
+        to a ranked member search (same result as `search_enum_members`); a
+        bare enum name returns the same truncation as `get_enum` for large
+        enums. Top-level callables (functions bucket) return a `function`
+        entry with no members.
 
         Names are not globally unique (e.g. the Text control vs the canvas
         Text shape): the best candidate wins and the response notes the
@@ -360,15 +379,33 @@ class ApiStore:
         bucket, entry = cands[0]
 
         if bucket == "enums":
-            if member is not None or query is not None:
+            ename = entry["name"]
+            # Resolve enum members inline rather than bouncing the caller to
+            # search_enum_members: production traces show models burning a
+            # round-trip per value on get_api("Colors", query="RED"). `member`
+            # and `query` are both treated as a member search here.
+            term = member if member is not None else query
+            if term is not None:
+                matches = self.search_enum_members(ename, term, limit=20)
+                note = (
+                    f"members of {ename} matching '{term}'"
+                    if matches
+                    else f"no {ename} member matches '{term}' — try "
+                    "search_enum_members for a broader search"
+                )
                 return {
-                    "error": (
-                        f"'{name}' is an enum — use search_enum_members or "
-                        "enum_has_member to look up its members"
-                    )
+                    "kind": "enum",
+                    "name": ename,
+                    "note": note,
+                    "members": [{"name": m} for m in matches],
                 }
-            enum = self.get_enum(entry["name"])
+            enum = self.get_enum(ename)
             return {"kind": enum.get("kind", "enum"), **enum}
+
+        if bucket == "functions":
+            # Top-level callables (ft.run, hooks, decorators) carry no
+            # members — return the entry as-is for render_text.
+            return {"kind": "function", **entry}
 
         hit = entry if bucket == "controls" else {"kind": _BUCKET_KIND[bucket], **entry}
         if member is not None:
