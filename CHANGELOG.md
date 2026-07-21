@@ -11,6 +11,7 @@
 
 * Flutter updated to [3.44.7](https://github.com/flutter/flutter/blob/stable/CHANGELOG.md#3447).
 * Fix `flet_video.Video` resetting its `volume` (and `pitch`, `playback_rate`, `shuffle_playlist`, `playlist_mode`, `subtitle_track`) to the player's defaults after toggling `visible` off then on — e.g. `volume` jumped back to `100`. Hiding a `Video` disposes its native `media_kit` player and showing it recreates a fresh one at default settings; the "last-applied" tracking now lives with the player (not the persistent control model) and is reset on recreation, so `build()` re-applies every setting to the new player ([#6683](https://github.com/flet-dev/flet/issues/6683), [#6694](https://github.com/flet-dev/flet/pull/6694)) by @ndonkoHenri.
+* Fix `SearchBar.on_tap_outside_bar` not firing when the user tapped outside the *open* search view. That case now has a dedicated `SearchBar.on_tap_outside_view` event (fired when tapping outside the open view, e.g. to dismiss it), and `on_tap_outside_bar` is documented to match what it actually does: fire while the bar is focused and the view is closed, like `TextField.on_tap_outside` ([#6593](https://github.com/flet-dev/flet/issues/6593), [#6697](https://github.com/flet-dev/flet/pull/6697)) by @ndonkoHenri.
 
 ## 0.86.1
 
